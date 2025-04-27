@@ -37,11 +37,6 @@
       "static/chunks/main.js",
       "static/chunks/pages/bars/[id].js"
     ],
-    "/login": [
-      "static/chunks/webpack.js",
-      "static/chunks/main.js",
-      "static/chunks/pages/login.js"
-    ],
     "/settings": [
       "static/chunks/webpack.js",
       "static/chunks/main.js",

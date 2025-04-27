@@ -1,7 +1,7 @@
 import { useRouter } from 'next/router';
 import { useEffect, useState } from 'react';
 import Layout from '../../components/Layout';
-import { MapPinIcon, QueueListIcon, StarIcon, CurrencyDollarIcon, UsersIcon } from '@heroicons/react/24/solid';
+import { MapPinIcon, QueueListIcon, StarIcon, CurrencyDollarIcon, UsersIcon, ChevronDownIcon, ShareIcon, HeartIcon, PlusIcon, MinusIcon } from '@heroicons/react/24/solid';
 
 const TRAFFIC_LEVELS = ['Empty', 'Moderate', 'Busy', 'Packed'];
 const TRAFFIC_COLORS = {
@@ -18,9 +18,11 @@ export default function BarDetail() {
   const [queueStatus, setQueueStatus] = useState(null);
   const [loading, setLoading] = useState(true);
   const [rating, setRating] = useState(0);
-  const [coverFee, setCoverFee] = useState('');
+  const [coverFee, setCoverFee] = useState(20); // Default to $20
   const [traffic, setTraffic] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [showMap, setShowMap] = useState(false);
+  const [isFavorite, setIsFavorite] = useState(false);
   const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
 
   useEffect(() => {
@@ -85,7 +87,6 @@ export default function BarDetail() {
     const barRes = await fetch(`http://localhost:5001/api/bars/${id}`);
     setBar(await barRes.json());
     setSubmitting(false);
-    setCoverFee('');
   };
 
   const submitTraffic = async () => {
@@ -104,6 +105,35 @@ export default function BarDetail() {
     setTraffic('');
   };
 
+  const toggleFavorite = () => {
+    setIsFavorite(!isFavorite);
+    // In a real app, you would save this to the user's profile
+  };
+
+  const shareBar = () => {
+    if (navigator.share) {
+      navigator.share({
+        title: bar.name,
+        text: `Check out ${bar.name} on BarScout!`,
+        url: window.location.href,
+      })
+      .catch(err => console.error('Error sharing:', err));
+    } else {
+      // Fallback - copy to clipboard
+      navigator.clipboard.writeText(window.location.href)
+        .then(() => alert('Link copied to clipboard!'))
+        .catch(err => console.error('Error copying:', err));
+    }
+  };
+
+  // Increment/decrement cover fee
+  const adjustCoverFee = (amount) => {
+    setCoverFee(prev => {
+      const newValue = Number(prev) + amount;
+      return newValue > 0 ? newValue : 0;
+    });
+  };
+
   // Calculate average rating, latest cover, and latest traffic
   const avgRating = bar?.ratings?.length
     ? (bar.ratings.reduce((a, r) => a + r.value, 0) / bar.ratings.length).toFixed(1)
@@ -115,152 +145,247 @@ export default function BarDetail() {
     ? bar.trafficReports[bar.trafficReports.length - 1].level
     : 'N/A';
 
-  return (
-    <Layout>
-      {loading ? (
-        <div className="flex justify-center items-center h-64">
-          <div className="animate-pulse flex space-x-4">
-            <div className="rounded-full bg-gray-700 h-12 w-12"></div>
-            <div className="flex-1 space-y-4 py-1">
-              <div className="h-4 bg-gray-700 rounded w-3/4"></div>
-              <div className="space-y-2">
-                <div className="h-4 bg-gray-700 rounded"></div>
-                <div className="h-4 bg-gray-700 rounded w-5/6"></div>
-              </div>
-            </div>
+  // Default image if none provided
+  const defaultImage = 'https://images.unsplash.com/photo-1572116469696-31de0f17cc34?q=80&w=1000';
+
+  if (loading) {
+    return (
+      <Layout>
+        <div className="animate-pulse space-y-8 max-w-4xl mx-auto">
+          <div className="h-64 bg-gray-800 rounded-xl w-full"></div>
+          <div className="h-8 bg-gray-800 rounded w-3/4"></div>
+          <div className="h-4 bg-gray-800 rounded w-1/2"></div>
+          <div className="grid grid-cols-3 gap-4">
+            <div className="h-24 bg-gray-800 rounded"></div>
+            <div className="h-24 bg-gray-800 rounded"></div>
+            <div className="h-24 bg-gray-800 rounded"></div>
           </div>
         </div>
-      ) : bar && (
-        <div className="card">
-          {bar.image && (
-            <div className="h-56 sm:h-64 w-full overflow-hidden">
-              <img src={bar.image} alt={bar.name} className="w-full h-full object-cover" />
-            </div>
-          )}
-          <div className="p-4 sm:p-8">
-            <h1 className="text-xl sm:text-2xl font-bold mb-2">{bar.name}</h1>
-            <div className="flex items-center text-gray-400 mb-6">
-              <MapPinIcon className="h-4 w-4 sm:h-5 sm:w-5 mr-2 flex-shrink-0" />
-              <span className="text-sm sm:text-base">{bar.location}</span>
-            </div>
-            
-            <div className="grid grid-cols-3 gap-2 sm:gap-4 mb-6 sm:mb-8">
-              <div className="bg-gray-800 rounded-lg p-2 sm:p-4 flex flex-col items-center justify-center">
-                <div className="flex items-center mb-1">
-                  <StarIcon className="h-4 w-4 sm:h-5 sm:w-5 text-yellow-400 mr-1" />
-                  <span className="text-lg sm:text-xl font-bold">{avgRating}</span>
+      </Layout>
+    );
+  }
+
+  if (!bar) {
+    return (
+      <Layout>
+        <div className="text-center py-12">
+          <h2 className="text-2xl font-bold text-red-500">Bar not found</h2>
+          <p className="mt-2 text-gray-400">The bar you're looking for doesn't exist or has been removed.</p>
+          <button 
+            onClick={() => router.push('/bars')} 
+            className="mt-6 btn-primary"
+          >
+            Back to Bars
+          </button>
+        </div>
+      </Layout>
+    );
+  }
+
+  return (
+    <Layout>
+      {/* Hero Section with Image Overlay */}
+      <div className="relative -mt-4 -mx-6 mb-8">
+        <div className="h-[50vh] min-h-[400px] w-full relative">
+          <img 
+            src={bar.image || defaultImage} 
+            alt={bar.name} 
+            className="w-full h-full object-cover" 
+          />
+          <div className="absolute inset-0 bg-gradient-to-t from-black via-black/70 to-transparent"></div>
+          
+          {/* Action buttons */}
+          <div className="absolute top-4 right-4 flex space-x-3">
+            <button 
+              onClick={toggleFavorite}
+              className="p-2 rounded-full bg-black/50 backdrop-blur-sm hover:bg-black/70 transition-colors"
+            >
+              <HeartIcon className={`h-6 w-6 ${isFavorite ? 'text-red-500' : 'text-white'}`} />
+            </button>
+            <button 
+              onClick={shareBar}
+              className="p-2 rounded-full bg-black/50 backdrop-blur-sm hover:bg-black/70 transition-colors"
+            >
+              <ShareIcon className="h-6 w-6 text-white" />
+            </button>
+          </div>
+          
+          {/* Bar info overlay */}
+          <div className="absolute bottom-0 left-0 right-0 p-6 sm:p-8">
+            <div className="flex flex-wrap items-end justify-between">
+              <div>
+                <h1 className="text-3xl sm:text-4xl font-bold text-white mb-2 drop-shadow-lg">{bar.name}</h1>
+                <div className="flex items-center text-gray-200 mb-2">
+                  <MapPinIcon className="h-5 w-5 mr-2" />
+                  <span>{bar.location}</span>
                 </div>
-                <span className="text-xs text-gray-400">Rating</span>
+                
+                {/* Stats badges */}
+                <div className="flex flex-wrap gap-3 mt-3">
+                  {avgRating !== 'N/A' && (
+                    <div className="flex items-center bg-black/50 backdrop-blur-sm px-3 py-1 rounded-full">
+                      <StarIcon className="h-4 w-4 text-yellow-400 mr-1" />
+                      <span className="text-white font-medium">{avgRating}</span>
+                    </div>
+                  )}
+                  
+                  {latestCover !== 'N/A' && (
+                    <div className="flex items-center bg-black/50 backdrop-blur-sm px-3 py-1 rounded-full">
+                      <CurrencyDollarIcon className="h-4 w-4 text-green-400 mr-1" />
+                      <span className="text-white font-medium">${latestCover}</span>
+                    </div>
+                  )}
+                  
+                  {latestTraffic !== 'N/A' && (
+                    <div className={`flex items-center ${TRAFFIC_COLORS[latestTraffic]} px-3 py-1 rounded-full`}>
+                      <UsersIcon className="h-4 w-4 text-white mr-1" />
+                      <span className="text-white font-medium">{latestTraffic}</span>
+                    </div>
+                  )}
+                </div>
               </div>
               
-              <div className="bg-gray-800 rounded-lg p-2 sm:p-4 flex flex-col items-center justify-center">
-                <div className="flex items-center mb-1">
-                  <CurrencyDollarIcon className="h-4 w-4 sm:h-5 sm:w-5 text-green-400 mr-1" />
-                  <span className="text-lg sm:text-xl font-bold">${latestCover}</span>
-                </div>
-                <span className="text-xs text-gray-400">Cover Fee</span>
-              </div>
-              
-              <div className="bg-gray-800 rounded-lg p-2 sm:p-4 flex flex-col items-center justify-center">
-                <div className="flex items-center mb-1">
-                  <UsersIcon className="h-4 w-4 sm:h-5 sm:w-5 text-blue-400 mr-1" />
-                  <span className="text-lg sm:text-xl font-bold truncate max-w-[60px] sm:max-w-full">{latestTraffic}</span>
-                </div>
-                <span className="text-xs text-gray-400">Traffic</span>
-              </div>
-            </div>
-            
-            <div className="flex items-center mb-6">
-              <QueueListIcon className="h-5 w-5 text-purple-400 mr-2 flex-shrink-0" />
-              <span className="text-base sm:text-lg">Queue: <span className="font-bold">{bar.queueCount}</span></span>
-              {token && (
-                <div className="ml-auto">
+              {/* Queue status and button */}
+              {token && queueStatus !== null && (
+                <div className="mt-4 sm:mt-0">
+                  <div className="flex items-center mb-2 justify-end">
+                    <QueueListIcon className="h-5 w-5 text-blue-400 mr-2" />
+                    <span className="text-white font-medium">Queue: {bar.queueCount}</span>
+                  </div>
                   {queueStatus ? (
-                    <button onClick={handleLeave} className="btn-secondary text-xs sm:text-sm py-1 px-2 sm:px-3">
+                    <button onClick={handleLeave} className="btn-secondary w-full sm:w-auto">
                       Leave Queue
                     </button>
                   ) : (
-                    <button onClick={handleJoin} className="btn-primary text-xs sm:text-sm py-1 px-2 sm:px-3">
+                    <button onClick={handleJoin} className="btn-primary w-full sm:w-auto">
                       Join Queue
                     </button>
                   )}
                 </div>
               )}
             </div>
-
-            {token && (
-              <div className="border-t border-gray-800 pt-6 mt-6 space-y-6">
-                <h2 className="text-lg sm:text-xl font-semibold mb-4">Share Your Experience</h2>
-                
-                <div className="card-body bg-gray-800/50 rounded-lg p-3 sm:p-4">
-                  <h3 className="text-sm sm:text-base font-medium mb-3">Rate this bar</h3>
-                  <div className="flex items-center">
-                    <div className="flex">
-                      {[1,2,3,4,5].map(star => (
-                        <button
-                          key={star}
-                          onClick={() => setRating(star)}
-                          className={`text-xl sm:text-2xl focus:outline-none transition-colors duration-200 ${rating >= star ? 'text-yellow-400' : 'text-gray-600 hover:text-gray-400'}`}
-                          disabled={submitting}
-                        >
-                          <StarIcon className="h-4 w-4 sm:h-5 sm:w-5" />
-                        </button>
-                      ))}
-                    </div>
-                    <button
-                      onClick={submitRating}
-                      className="ml-auto btn-primary text-xs sm:text-sm py-1 px-2"
-                      disabled={submitting || rating === 0}
-                    >Submit</button>
-                  </div>
-                </div>
-                
-                <div className="card-body bg-gray-800/50 rounded-lg p-3 sm:p-4">
-                  <h3 className="text-sm sm:text-base font-medium mb-3">Submit Cover Fee</h3>
-                  <div className="flex items-center">
-                    <div className="relative">
-                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">$</span>
-                      <input
-                        type="number"
-                        min="0"
-                        step="1"
-                        value={coverFee}
-                        onChange={e => setCoverFee(e.target.value)}
-                        className="pl-8 py-2 bg-gray-900 border border-gray-700 rounded-lg focus:ring-1 focus:ring-blue-500 focus:border-blue-500 w-24 sm:w-32 text-sm"
-                        disabled={submitting}
-                      />
-                    </div>
-                    <button
-                      onClick={submitCover}
-                      className="ml-auto btn-primary text-xs sm:text-sm py-1 px-2"
-                      disabled={submitting || !coverFee}
-                    >Submit</button>
-                  </div>
-                </div>
-                
-                <div className="card-body bg-gray-800/50 rounded-lg p-3 sm:p-4">
-                  <h3 className="text-sm sm:text-base font-medium mb-3">Report Traffic</h3>
-                  <div className="flex flex-wrap gap-2">
-                    {TRAFFIC_LEVELS.map(level => (
-                      <button
-                        key={level}
-                        onClick={() => setTraffic(level)}
-                        className={`px-2 sm:px-3 py-1 rounded-full text-xs sm:text-sm font-medium transition-all duration-200 ${traffic === level ? `${TRAFFIC_COLORS[level]} text-white ring-2 ring-white` : 'bg-gray-700 hover:bg-gray-600'}`}
-                        disabled={submitting}
-                      >{level}</button>
-                    ))}
-                    <button
-                      onClick={submitTraffic}
-                      className="ml-auto btn-primary text-xs sm:text-sm py-1 px-2"
-                      disabled={submitting || !traffic}
-                    >Submit</button>
-                  </div>
-                </div>
-              </div>
-            )}
           </div>
         </div>
-      )}
+      </div>
+      
+      {/* Main Content */}
+      <div className="max-w-4xl mx-auto">
+        {/* Map Section with Toggle */}
+        <div className="mb-8 overflow-hidden rounded-xl border border-gray-800 bg-gray-900/50">
+          <button 
+            onClick={() => setShowMap(!showMap)} 
+            className="w-full p-4 flex items-center justify-between hover:bg-gray-800/50 transition-colors"
+          >
+            <span className="font-medium text-lg">Location & Map</span>
+            <ChevronDownIcon className={`h-5 w-5 transition-transform duration-300 ${showMap ? 'rotate-180' : ''}`} />
+          </button>
+          
+          <div className={`transition-all duration-500 ease-in-out ${showMap ? 'max-h-96' : 'max-h-0'}`}>
+            <iframe
+              width="100%"
+              height="350"
+              src={`https://maps.google.com/maps?q=${encodeURIComponent(bar.location)}&output=embed`}
+              allowFullScreen
+              loading="lazy"
+              className="border-0"
+              title={`Map of ${bar.name}`}
+            />
+          </div>
+        </div>
+        
+        {/* User Feedback Section */}
+        {token && (
+          <div className="space-y-6 mb-8">
+            <h2 className="text-2xl font-bold text-white mb-4">Share Your Experience</h2>
+            
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              {/* Rating Card */}
+              <div className="card-body bg-gradient-to-br from-gray-800/80 to-gray-900/80 rounded-xl p-5 backdrop-blur-sm">
+                <h3 className="text-lg font-medium mb-4 text-center">Rate this bar</h3>
+                <div className="flex justify-center mb-4">
+                  {[1,2,3,4,5].map(star => (
+                    <button
+                      key={star}
+                      onClick={() => setRating(star)}
+                      className={`text-3xl focus:outline-none transition-colors duration-200 ${rating >= star ? 'text-yellow-400' : 'text-gray-600 hover:text-gray-400'}`}
+                      disabled={submitting}
+                    >
+                      <StarIcon className="h-8 w-8" />
+                    </button>
+                  ))}
+                </div>
+                <button
+                  onClick={submitRating}
+                  className="btn-primary w-full py-2"
+                  disabled={submitting || rating === 0}
+                >Submit Rating</button>
+              </div>
+              
+              {/* Cover Fee Card - ENHANCED BALLER VERSION */}
+              <div className="card-body bg-gradient-to-br from-gray-800/80 to-gray-900/80 rounded-xl p-5 backdrop-blur-sm">
+                <h3 className="text-lg font-medium mb-4 text-center text-white">Submit Cover Fee</h3>
+                
+                <div className="flex items-center justify-center mb-6">
+                  <div className="relative flex items-center">
+                    <button 
+                      onClick={() => adjustCoverFee(-5)}
+                      className="w-12 h-12 flex items-center justify-center rounded-full bg-gray-800/80 hover:bg-gray-700/90 transition-colors z-10 shadow-lg"
+                      disabled={submitting || coverFee <= 5}
+                    >
+                      <MinusIcon className="h-6 w-6 text-white" />
+                    </button>
+                    
+                    <div className="w-44 h-20 mx-2 relative bg-gradient-to-r from-blue-600 to-blue-800 rounded-xl overflow-hidden flex items-center justify-center shadow-lg shadow-blue-900/30">
+                      <div className="absolute inset-0.5 bg-black/80 rounded-lg flex items-center justify-center">
+                        <div className="text-5xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-blue-300 flex items-center">
+                          <span className="text-3xl mr-1">$</span>
+                          <span>{coverFee}</span>
+                        </div>
+                      </div>
+                    </div>
+                    
+                    <button 
+                      onClick={() => adjustCoverFee(5)}
+                      className="w-12 h-12 flex items-center justify-center rounded-full bg-gray-800/80 hover:bg-gray-700/90 transition-colors z-10 shadow-lg"
+                      disabled={submitting}
+                    >
+                      <PlusIcon className="h-6 w-6 text-white" />
+                    </button>
+                  </div>
+                </div>
+                
+                <button
+                  onClick={submitCover}
+                  className="w-full py-3 rounded-lg font-bold text-white bg-gradient-to-r from-blue-600 to-blue-800 hover:from-blue-500 hover:to-blue-700 transition-all duration-300 transform hover:scale-105 shadow-lg shadow-blue-900/30"
+                  disabled={submitting}
+                >
+                  Submit Cover
+                </button>
+              </div>
+              
+              {/* Traffic Report Card */}
+              <div className="card-body bg-gradient-to-br from-gray-800/80 to-gray-900/80 rounded-xl p-5 backdrop-blur-sm">
+                <h3 className="text-lg font-medium mb-4 text-center">Report Traffic</h3>
+                <div className="grid grid-cols-2 gap-2 mb-4">
+                  {TRAFFIC_LEVELS.map(level => (
+                    <button
+                      key={level}
+                      onClick={() => setTraffic(level)}
+                      className={`px-3 py-2 rounded-lg text-sm font-medium transition-all duration-200 ${traffic === level ? `${TRAFFIC_COLORS[level]} text-white ring-2 ring-white` : 'bg-gray-700 hover:bg-gray-600'}`}
+                      disabled={submitting}
+                    >{level}</button>
+                  ))}
+                </div>
+                <button
+                  onClick={submitTraffic}
+                  className="btn-primary w-full py-2"
+                  disabled={submitting || !traffic}
+                >Submit Traffic</button>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
     </Layout>
   );
 }

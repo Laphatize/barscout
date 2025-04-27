@@ -2,16 +2,94 @@ import { useEffect, useState } from 'react';
 import Layout from '../components/Layout';
 import { MapPinIcon, QueueListIcon, StarIcon } from '@heroicons/react/24/solid';
 
+// Haversine formula to calculate distance between two points on Earth
+function getDistanceFromLatLonInKm(lat1, lon1, lat2, lon2) {
+  const R = 6371; // Radius of the earth in km
+  const dLat = deg2rad(lat2 - lat1);
+  const dLon = deg2rad(lon2 - lon1);
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(deg2rad(lat1)) * Math.cos(deg2rad(lat2)) *
+    Math.sin(dLon / 2) * Math.sin(dLon / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return R * c; // Distance in km
+}
+
+function deg2rad(deg) {
+  return deg * (Math.PI / 180);
+}
+
+// Convert coordinates from string format to lat/lng object
+function parseCoordinates(locationStr) {
+  // This is a simple implementation - in a real app, you'd use geocoding
+  // For now, we'll just generate random coordinates near NYC for demo purposes
+  return {
+    lat: 40.7128 + (Math.random() - 0.5) * 0.1, // Random lat near NYC
+    lng: -74.006 + (Math.random() - 0.5) * 0.1   // Random lng near NYC
+  };
+}
+
 export default function Bars() {
   const [bars, setBars] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [userLocation, setUserLocation] = useState(null);
+  const [barsWithDistance, setBarsWithDistance] = useState([]);
 
+  // Get user's location
+  useEffect(() => {
+    if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        (position) => {
+          setUserLocation({
+            lat: position.coords.latitude,
+            lng: position.coords.longitude
+          });
+        },
+        (error) => {
+          console.warn('Error getting location:', error.message);
+          // Default to NYC if location access is denied
+          setUserLocation({ lat: 40.7128, lng: -74.006 });
+        }
+      );
+    }
+  }, []);
+
+  // Fetch bars
   useEffect(() => {
     fetch('http://localhost:5001/api/bars')
       .then(res => res.json())
       .then(setBars)
       .finally(() => setLoading(false));
   }, []);
+
+  // Calculate distances when we have both bars and user location
+  useEffect(() => {
+    if (bars.length && userLocation) {
+      const withDistance = bars.map(bar => {
+        // In a real app, the coordinates would come from your database
+        // For now, we'll parse them from the location string or generate random ones
+        const barCoords = parseCoordinates(bar.location);
+        const distance = getDistanceFromLatLonInKm(
+          userLocation.lat, 
+          userLocation.lng, 
+          barCoords.lat, 
+          barCoords.lng
+        );
+        
+        return {
+          ...bar,
+          distance: distance,
+          coordinates: barCoords
+        };
+      });
+      
+      // Sort by distance
+      withDistance.sort((a, b) => a.distance - b.distance);
+      setBarsWithDistance(withDistance);
+    }
+  }, [bars, userLocation]);
+
+  const barsToDisplay = barsWithDistance.length > 0 ? barsWithDistance : bars;
 
   return (
     <Layout>
@@ -31,7 +109,7 @@ export default function Bars() {
         </div>
       ) : (
         <div className="grid gap-6">
-          {bars.map(bar => (
+          {barsToDisplay.map(bar => (
             <a key={bar._id} href={`/bars/${bar._id}`} className="card group hover:shadow-2xl hover:shadow-blue-900/10 hover:border-gray-700 transition-all duration-300">
               {bar.image ? (
                 <div className="relative h-48 overflow-hidden">
@@ -56,9 +134,16 @@ export default function Bars() {
               )}
               <div className="p-6">
                 <h2 className="text-xl font-bold mb-2 group-hover:text-blue-400 transition-colors">{bar.name}</h2>
-                <div className="flex items-center text-gray-400 mb-3">
-                  <MapPinIcon className="h-4 w-4 mr-1" />
-                  <span className="text-sm">{bar.location}</span>
+                <div className="flex items-center justify-between text-gray-400 mb-3">
+                  <div className="flex items-center">
+                    <MapPinIcon className="h-4 w-4 mr-1" />
+                    <span className="text-sm">{bar.location}</span>
+                  </div>
+                  {bar.distance && (
+                    <span className="text-sm bg-blue-900/30 px-2 py-0.5 rounded-full">
+                      {bar.distance.toFixed(1)} km away
+                    </span>
+                  )}
                 </div>
                 <div className="flex items-center text-gray-500 text-sm">
                   <QueueListIcon className="h-4 w-4 mr-1" />
