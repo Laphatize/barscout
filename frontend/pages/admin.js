@@ -11,7 +11,7 @@ export default function Admin() {
     e.preventDefault();
     setMessage('');
     try {
-      const res = await fetch('https://api-barscout.ctfguide.com/api/admin/bars', {
+      const res = await fetch('https://barscout-api.ctfguide.com/api/admin/bars', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
