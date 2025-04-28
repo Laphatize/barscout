@@ -15,5 +15,11 @@ const barSchema = new mongoose.Schema({
   ratings: [{ user: { type: mongoose.Schema.Types.ObjectId, ref: 'User' }, value: Number }],
   coverFees: [{ user: { type: mongoose.Schema.Types.ObjectId, ref: 'User' }, amount: Number, timestamp: { type: Date, default: Date.now } }],
   trafficReports: [{ user: { type: mongoose.Schema.Types.ObjectId, ref: 'User' }, level: String, timestamp: { type: Date, default: Date.now } }],
+  gallery: [{
+    user: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+    imageUrl: String,
+    caption: String,
+    timestamp: Date
+  }],
 });
 module.exports = mongoose.model('Bar', barSchema);

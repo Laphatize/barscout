@@ -45,6 +45,155 @@ function calculateDistance(lat1, lon1, lat2, lon2) {
   return R * c;
 }
 
+// --- Gallery Feed Tab ---
+function GalleryTab({ barId, token }) {
+  const [gallery, setGallery] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [image, setImage] = useState(null);
+  const [caption, setCaption] = useState('');
+  const [uploading, setUploading] = useState(false);
+  const [error, setError] = useState('');
+  const [page, setPage] = useState(1);
+  const [hasMore, setHasMore] = useState(true);
+  const [showUpload, setShowUpload] = useState(false);
+  const loader = useRef(null);
+
+  useEffect(() => {
+    setLoading(true);
+    fetch(`${process.env.NEXT_PUBLIC_API}/api/bars/${barId}/gallery?page=1`)
+      .then(res => res.json())
+      .then(data => {
+        setGallery(data);
+        setHasMore(data.length > 0);
+        setLoading(false);
+      })
+      .catch(() => {
+        setError('Failed to load gallery.');
+        setLoading(false);
+      });
+  }, [barId]);
+
+  // Infinite scroll
+  useEffect(() => {
+    if (!hasMore) return;
+    const handleScroll = () => {
+      if (loader.current && loader.current.getBoundingClientRect().top <= window.innerHeight) {
+        setLoading(true);
+        fetch(`${process.env.NEXT_PUBLIC_API}/api/bars/${barId}/gallery?page=${page + 1}`)
+          .then(res => res.json())
+          .then(data => {
+            if (data.length === 0) setHasMore(false);
+            else {
+              setGallery(prev => [...prev, ...data]);
+              setPage(prev => prev + 1);
+            }
+            setLoading(false);
+          })
+          .catch(() => setLoading(false));
+      }
+    };
+    window.addEventListener('scroll', handleScroll);
+    return () => window.removeEventListener('scroll', handleScroll);
+  }, [page, hasMore, barId]);
+
+  const handleImageChange = e => {
+    setImage(e.target.files[0]);
+  };
+
+  const handleSubmit = async e => {
+    e.preventDefault();
+    if (!image) return setError('Please select an image.');
+    setUploading(true);
+    setError('');
+    const formData = new FormData();
+    formData.append('image', image);
+    formData.append('caption', caption);
+    try {
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API}/api/bars/${barId}/gallery`, {
+        method: 'POST',
+        headers: token ? { 'Authorization': `Bearer ${token}` } : {},
+        body: formData
+      });
+      if (!res.ok) throw new Error('Upload failed');
+      setImage(null);
+      setCaption('');
+      setUploading(false);
+      setError('');
+      // Trigger gallery refresh
+      fetch(`${process.env.NEXT_PUBLIC_API}/api/bars/${barId}/gallery`)
+        .then(res => res.json())
+        .then(data => setGallery(data));
+    } catch (err) {
+      setError('Upload failed.');
+      setUploading(false);
+    }
+  };
+
+  return (
+    <div className="relative">
+      {/* Floating Action Button (FAB) for posting a picture */}
+      <button
+        type="button"
+        aria-label="Post a photo"
+        onClick={() => setShowUpload(true)}
+        className="fixed z-[110] bottom-20 right-8 md:bottom-10 md:right-10 bg-gradient-to-br from-blue-600 to-blue-400 hover:from-blue-700 hover:to-blue-500 text-white rounded-full shadow-2xl w-16 h-16 flex items-center justify-center text-3xl transition-all duration-300 transform hover:scale-110 focus:outline-none focus:ring-4 focus:ring-blue-300 "
+        style={{ boxShadow: '0 6px 32px 0 rgba(0,0,0,0.24)' }}
+      >
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-8 h-8">
+          <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+        </svg>
+      </button>
+      {/* Upload Modal */}
+      {showUpload && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-60 p-4">
+          <form onSubmit={handleSubmit} className="bg-gray-800/90 p-10 rounded-xl flex flex-col gap-3 shadow-2xl max-w-md w-full relative animate-fadeIn">
+            <button type="button" onClick={() => setShowUpload(false)} className="absolute top-3 right-3 text-gray-400 hover:text-white text-2xl focus:outline-none">&times;</button>
+            <label className="block text-white font-semibold text-lg mb-2 text-center">Share a photo from this event:</label>
+            <input
+              type="file"
+              accept="image/*"
+              onChange={handleImageChange}
+              className="block w-full text-sm text-gray-300 file:mr-2 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 focus:outline-none focus:ring-2 focus:ring-blue-500 transition"
+            />
+            <input
+              type="text"
+              value={caption}
+              onChange={e => setCaption(e.target.value)}
+              placeholder="Caption (optional)"
+              className="block w-full rounded-lg bg-gray-900/80 text-white px-3 py-2 mt-2 focus:outline-none focus:ring-2 focus:ring-blue-500 transition"
+              maxLength={120}
+            />
+            <button
+              type="submit"
+              disabled={uploading}
+              className="w-full py-2 mt-2 rounded-lg font-semibold text-white bg-gradient-to-r from-blue-600 to-blue-400 hover:from-blue-700 hover:to-blue-500 transition disabled:opacity-60 disabled:cursor-not-allowed shadow"
+            >
+              {uploading ? 'Uploading...' : 'Upload'}
+            </button>
+            {error && <div className="text-center text-red-500 text-sm mt-2">{error}</div>}
+          </form>
+        </div>
+      )}
+      {/* Gallery Grid */}
+      <div className="gallery-grid grid grid-cols-1 w-full gap-y-6 mb-8">
+        {gallery.map((item, idx) => (
+          <div key={idx} className="gallery-item bg-gray-800 rounded-xl overflow-hidden shadow-lg flex flex-col border border-gray-800">
+            <img src={item.imageUrl} alt={item.caption} className="w-full h-52 object-cover" />
+            <div className="p-4 flex-1 flex flex-col justify-between">
+              <div className="text-gray-200 text-sm mb-2 break-words">{item.caption}</div>
+              <div className="text-xs text-gray-400 mt-auto">{new Date(item.timestamp).toLocaleString()} - @{item.user?.username || 'User'}</div>
+            </div>
+          </div>
+        ))}
+      </div>
+      <div ref={loader} />
+      {loading && <div className="text-center text-gray-400">Loading...</div>}
+      {!hasMore && !loading && <div className="mt-2 text-center text-gray-400">No more images.</div>}
+      {error && !showUpload && <div className="text-center text-red-500">{error}</div>}
+    </div>
+  );
+}
+
 export default function BarDetail() {
   const router = useRouter();
   const { id } = router.query;
@@ -65,6 +214,7 @@ export default function BarDetail() {
   const { getBarPopularity, startTracking, stopTracking, isTracking, nearbyBar } = useLocation();
   const watchIdRef = useRef(null);
   const [liveCount, setLiveCount] = useState(0);
+  const [activeTab, setActiveTab] = useState('info');
 
   useEffect(() => {
     setSocket(io(process.env.NEXT_PUBLIC_API));
@@ -395,7 +545,7 @@ export default function BarDetail() {
                           Leave Queue?
                         </button>
                       ) : (
-                        <button onClick={handleJoin} className="py-1 px-3 rounded-lg font-bold text-white   transition-all duration-300 transform hover:scale-105 shadow-lg shadow-blue-900/30 text-xs">
+                        <button onClick={handleJoin} className="py-1 px-3 rounded-lg font-bold text-white transition-all duration-300 transform hover:scale-105 shadow-lg shadow-blue-900/30 text-xs">
                           Join Queue?
                         </button>
                       )}
@@ -458,98 +608,116 @@ export default function BarDetail() {
           </div>
         </div>
         
-        {/* User Feedback Section */}
-        {token && (
-          <div className="space-y-6 mb-8">
-            <h2 className="text-2xl font-bold text-white mb-4">Share Your Experience</h2>
-            
-            <div className="grid grid-cols-1 gap-4">
-              {/* Rating Card */}
-              <div className="card-body bg-gradient-to-br from-gray-800/80 to-gray-900/80 rounded-xl p-5 backdrop-blur-sm">
-                <h3 className="text-lg font-medium mb-4 text-center">Rate this bar</h3>
-                <div className="flex justify-center mb-4">
-                  {[1,2,3,4,5].map(star => (
-                    <button
-                      key={star}
-                      onClick={() => setRating(star)}
-                      className={`text-3xl focus:outline-none transition-colors duration-200 ${rating >= star ? 'text-yellow-400' : 'text-gray-600 hover:text-gray-400'}`}
-                      disabled={submitting}
-                    >
-                      <StarIcon className="h-8 w-8" />
-                    </button>
-                  ))}
-                </div>
-                <button
-                  onClick={submitRating}
-                  className="btn-primary w-full py-2"
-                  disabled={submitting || rating === 0}
-                >Submit Rating</button>
-              </div>
-              
-              {/* Cover Fee Card - ENHANCED BALLER VERSION */}
-              <div className="card-body bg-gradient-to-br from-gray-800/80 to-gray-900/80 rounded-xl p-5 backdrop-blur-sm">
-                <h3 className="text-lg font-medium mb-4 text-center text-white">Submit Cover Fee</h3>
-                
-                <div className="flex items-center justify-center mb-6">
-                  <div className="relative flex items-center">
-                    <button 
-                      onClick={() => adjustCoverFee(-5)}
-                      className="w-12 h-12 flex items-center justify-center rounded-full bg-gray-800/80 hover:bg-gray-700/90 transition-colors z-10 shadow-lg"
-                      disabled={submitting || coverFee <= 5}
-                    >
-                      <MinusIcon className="h-6 w-6 text-white" />
-                    </button>
-                    
-                    <div className="w-44 h-20 mx-2 relative bg-gradient-to-r from-blue-600 to-blue-800 rounded-xl overflow-hidden flex items-center justify-center shadow-lg shadow-blue-900/30">
-                      <div className="absolute inset-0.5 bg-black/80 rounded-lg flex items-center justify-center">
-                        <div className="text-5xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-blue-300 flex items-center">
-                          <span className="text-3xl mr-1">$</span>
-                          <span>{coverFee}</span>
-                        </div>
+        {/* Tabbed Interface */}
+        <div className="flex gap-2 mb-4">
+          <button
+            className={`px-4 py-2  rounded-md font-bold transition-colors ${activeTab === 'info' ? 'bg-blue-700 text-white' : 'bg-gray-800 text-gray-300'}`}
+            onClick={() => setActiveTab('info')}
+          >Info</button>
+          <button
+            className={`px-4 py-2 rounded-md font-bold transition-colors ${activeTab === 'gallery' ? 'bg-blue-700 text-white' : 'bg-gray-800 text-gray-300'}`}
+            onClick={() => setActiveTab('gallery')}
+          >Gallery Feed</button>
+        </div>
+        <div className=" rounded-b-xl mt-2">
+          {activeTab === 'info' ? (
+            <div>
+              {/* User Feedback Section */}
+              {token && (
+                <div className="space-y-6 mb-8">
+                  <h2 className="text-2xl font-bold text-white mb-4">Share Your Experience</h2>
+                  
+                  <div className="grid grid-cols-1 gap-4">
+                    {/* Rating Card */}
+                    <div className="card-body bg-gradient-to-br from-gray-800/80 to-gray-900/80 rounded-xl p-5 backdrop-blur-sm">
+                      <h3 className="text-lg font-medium mb-4 text-center">Rate this bar</h3>
+                      <div className="flex justify-center mb-4">
+                        {[1,2,3,4,5].map(star => (
+                          <button
+                            key={star}
+                            onClick={() => setRating(star)}
+                            className={`text-3xl focus:outline-none transition-colors duration-200 ${rating >= star ? 'text-yellow-400' : 'text-gray-600 hover:text-gray-400'}`}
+                            disabled={submitting}
+                          >
+                            <StarIcon className="h-8 w-8" />
+                          </button>
+                        ))}
                       </div>
+                      <button
+                        onClick={submitRating}
+                        className="btn-primary w-full py-2"
+                        disabled={submitting || rating === 0}
+                      >Submit Rating</button>
                     </div>
                     
-                    <button 
-                      onClick={() => adjustCoverFee(5)}
-                      className="w-12 h-12 flex items-center justify-center rounded-full bg-gray-800/80 hover:bg-gray-700/90 transition-colors z-10 shadow-lg"
-                      disabled={submitting}
-                    >
-                      <PlusIcon className="h-6 w-6 text-white" />
-                    </button>
+                    {/* Cover Fee Card - ENHANCED BALLER VERSION */}
+                    <div className="card-body bg-gradient-to-br from-gray-800/80 to-gray-900/80 rounded-xl p-5 backdrop-blur-sm">
+                      <h3 className="text-lg font-medium mb-4 text-center text-white">Submit Cover Fee</h3>
+                      
+                      <div className="flex items-center justify-center mb-6">
+                        <div className="relative flex items-center">
+                          <button 
+                            onClick={() => adjustCoverFee(-5)}
+                            className="w-12 h-12 flex items-center justify-center rounded-full bg-gray-800/80 hover:bg-gray-700/90 transition-colors z-10 shadow-lg"
+                            disabled={submitting || coverFee <= 5}
+                          >
+                            <MinusIcon className="h-6 w-6 text-white" />
+                          </button>
+                          
+                          <div className="w-44 h-20 mx-2 relative bg-gradient-to-r from-blue-600 to-blue-800 rounded-xl overflow-hidden flex items-center justify-center shadow-lg shadow-blue-900/30">
+                            <div className="absolute inset-0.5 bg-black/80 rounded-lg flex items-center justify-center">
+                              <div className="text-5xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-blue-300 flex items-center">
+                                <span className="text-3xl mr-1">$</span>
+                                <span>{coverFee}</span>
+                              </div>
+                            </div>
+                          </div>
+                          
+                          <button 
+                            onClick={() => adjustCoverFee(5)}
+                            className="w-12 h-12 flex items-center justify-center rounded-full bg-gray-800/80 hover:bg-gray-700/90 transition-colors z-10 shadow-lg"
+                            disabled={submitting}
+                          >
+                            <PlusIcon className="h-6 w-6 text-white" />
+                          </button>
+                        </div>
+                      </div>
+                      
+                      <button
+                        onClick={submitCover}
+                        className="w-full py-3 rounded-lg font-bold text-white bg-gradient-to-r from-blue-600 to-blue-400 hover:from-blue-700 hover:to-blue-500 transition disabled:opacity-60 disabled:cursor-not-allowed shadow"
+                      >
+                        Submit Cover
+                      </button>
+                    </div>
+                    
+                    {/* Traffic Report Card */}
+                    <div className="card-body bg-gradient-to-br from-gray-800/80 to-gray-900/80 rounded-xl p-5 backdrop-blur-sm">
+                      <h3 className="text-lg font-medium mb-4 text-center">Report Traffic</h3>
+                      <div className="grid grid-cols-2 gap-2 mb-4">
+                        {TRAFFIC_LEVELS.map(level => (
+                          <button
+                            key={level}
+                            onClick={() => setTraffic(level)}
+                            className={`px-3 py-2 rounded-lg text-sm font-medium transition-all duration-200 ${traffic === level ? `${TRAFFIC_COLORS[level]} text-white ring-2 ring-white` : 'bg-gray-700 hover:bg-gray-600'}`}
+                            disabled={submitting}
+                          >{level}</button>
+                        ))}
+                      </div>
+                      <button
+                        onClick={submitTraffic}
+                        className="btn-primary w-full py-2"
+                        disabled={submitting || !traffic}
+                      >Submit Traffic</button>
+                    </div>
                   </div>
                 </div>
-                
-                <button
-                  onClick={submitCover}
-                  className="w-full py-3 rounded-lg font-bold text-white bg-gradient-to-r from-blue-600 to-blue-800 hover:from-blue-500 hover:to-blue-700 transition-all duration-300 transform hover:scale-105 shadow-lg shadow-blue-900/30"
-                  disabled={submitting}
-                >
-                  Submit Cover
-                </button>
-              </div>
-              
-              {/* Traffic Report Card */}
-              <div className="card-body bg-gradient-to-br from-gray-800/80 to-gray-900/80 rounded-xl p-5 backdrop-blur-sm">
-                <h3 className="text-lg font-medium mb-4 text-center">Report Traffic</h3>
-                <div className="grid grid-cols-2 gap-2 mb-4">
-                  {TRAFFIC_LEVELS.map(level => (
-                    <button
-                      key={level}
-                      onClick={() => setTraffic(level)}
-                      className={`px-3 py-2 rounded-lg text-sm font-medium transition-all duration-200 ${traffic === level ? `${TRAFFIC_COLORS[level]} text-white ring-2 ring-white` : 'bg-gray-700 hover:bg-gray-600'}`}
-                      disabled={submitting}
-                    >{level}</button>
-                  ))}
-                </div>
-                <button
-                  onClick={submitTraffic}
-                  className="btn-primary w-full py-2"
-                  disabled={submitting || !traffic}
-                >Submit Traffic</button>
-              </div>
+              )}
             </div>
-          </div>
-        )}
+          ) : (
+            <GalleryTab barId={id} token={token} />
+          )}
+        </div>
       </div>
     </Layout>
   );
