@@ -1,4 +1,6 @@
 const express = require('express');
+const cors = require('cors');
+
 require('dotenv').config();
 const mongoose = require('mongoose');
 const authRoutes = require('./routes/auth');
@@ -9,7 +11,7 @@ const adminRoutes = require('./routes/admin');
 const app = express();
 // Increase JSON body size limit to 10mb for image uploads
 app.use(express.json({ limit: '10mb' }));
-
+app.use(cors({ origin: 'https://barscout.ctfguide.com' }));
 // DB
 mongoose.connect(process.env.MONGO_URI, { useNewUrlParser: true, useUnifiedTopology: true })
   .then(() => console.log('MongoDB connected'))
