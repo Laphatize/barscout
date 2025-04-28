@@ -12,7 +12,7 @@ export default function Register() {
     setError('');
     setSuccess(false);
     try {
-      const res = await fetch('https://barscout-api.ctfguide.com/api/auth/register', {
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API}/api/auth/register`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ username, password })

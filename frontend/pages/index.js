@@ -3,16 +3,30 @@ import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import Layout from '../components/Layout';
 import { Wine } from 'lucide-react';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 
 export default function Home() {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
-
+  const [currentBg, setCurrentBg] = useState(0);
+  
+  const backgrounds = [
+    '/images/bg.png',
+    'https://collegestats.org/wp-content/uploads/2012/12/21campusbars.jpg',
+    'https://cdn.ktar.com/ktar/wp-content/uploads/2015/10/elehefe2.jpg',
+    'https://www.collegemagazine.com/wp-content/uploads/2021/03/aa-bars.jpg'
+  ];
+  
   useEffect(() => {
     const token = localStorage.getItem('token');
     if (token) {
       setIsLoggedIn(true);
     }
+    
+    const interval = setInterval(() => {
+      setCurrentBg(prev => (prev + 1) % backgrounds.length);
+    }, 3000);
+    
+    return () => clearInterval(interval);
   }, []);
 
   // Animation variants
@@ -88,37 +102,45 @@ export default function Home() {
       
       {/* Full-screen background with overlay - using fixed positioning */}
       <div className="fixed top-0 left-0 w-full h-full -z-10">
-        {/* Background image */}
-        <motion.div 
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 0.9 }}
-          transition={{ duration: 1.5 }}
-          className="absolute inset-0"
-          style={{
-            backgroundImage: 'url("/images/bg.png")',
-            backgroundSize: 'cover',
-            backgroundPosition: 'center',
-          }}
-        ></motion.div>
+      </div>
+      
+      <motion.div 
+        className="w-full bg-gray-900/70 backdrop-blur-md text-white rounded-2xl shadow-xl mt-16 mx-auto flex flex-col items-center justify-center min-h-[60vh] border border-gray-800/50 overflow-hidden"
+        initial="hidden"
+        animate="visible"
+        variants={containerVariants}
+        style={{ position: 'relative' }}
+      >
+        <AnimatePresence>
+          <motion.div
+            key={currentBg}
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 1 }}
+            className="absolute inset-0 -z-10"
+            style={{
+              backgroundImage: `url("${backgrounds[currentBg]}")`,
+              backgroundSize: 'cover',
+              backgroundPosition: 'center',
+              backgroundRepeat: 'no-repeat',
+            }}
+          />
+        </AnimatePresence>
+        
         {/* Gradient overlay */}
         <motion.div 
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
-          transition={{ duration: 2 }}
-          className="absolute inset-0 bg-gradient-to-b from-gray-950/90 via-gray-950/70 to-gray-950/90"
+          transition={{ duration: 0.3 }}
+          className="absolute -inset-1 bg-gradient-to-b from-gray-950/90 via-gray-950/70 to-gray-950/90 -z-10"
         ></motion.div>
-      </div>
-      
-      <motion.div 
-        className="w-full bg-gray-900/70 backdrop-blur-md text-white rounded-2xl shadow-xl mt-16 mx-auto flex flex-col items-center justify-center min-h-[60vh] border border-gray-800/50"
-        initial="hidden"
-        animate="visible"
-        variants={containerVariants}
-      >
+        
         <motion.div 
           className="relative w-16 h-16 mb-6 bg-gradient-to-br from-blue-500 to-blue-700 rounded-xl flex items-center justify-center shadow-lg shadow-blue-500/20 transform"
           variants={logoVariants}
           whileHover="hover"
+          
         >
           <div className="absolute inset-1 bg-gray-900 rounded-lg flex items-center justify-center">
             <Wine className="w-10 h-10 text-blue-400" />
@@ -133,7 +155,7 @@ export default function Home() {
         </motion.h1>
         
         <motion.p 
-          className="mb-8 text-lg text-gray-300 text-center"
+          className="mb-8 px-2 text-lg text-gray-300 text-center"
           variants={itemVariants}
         >
           Discover, rate, and vibe at the best bars in town. Join the party or help others find the perfect spot!

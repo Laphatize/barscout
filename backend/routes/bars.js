@@ -16,8 +16,12 @@ router.get('/:id', async (req, res) => {
 
 // Add bar (for general users, with image)
 router.post('/', auth, async (req, res) => {
-  const { name, location, image } = req.body;
-  const bar = new Bar({ name, location, image });
+  const { name, location, image, coordinates } = req.body;
+
+  // Only set coordinates if valid
+  let coordsToSave = (Array.isArray(coordinates) && coordinates.length === 2 && coordinates.every(n => typeof n === 'number' && !isNaN(n))) ? coordinates : undefined;
+  console.log('Saving bar with coordinates:', coordsToSave);
+  const bar = new Bar({ name, location, image, coordinates: coordsToSave });
   await bar.save();
   res.status(201).json(bar);
 });

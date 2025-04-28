@@ -1,8 +1,9 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import Layout from '../components/Layout';
 import Link from 'next/link';
 import { useRouter } from 'next/router';
 import { useAuth } from '../components/AuthContext';
+import PlacesAutocomplete from '../components/PlacesAutocomplete';
 
 export default function AddBar() {
   const [name, setName] = useState('');
@@ -11,6 +12,9 @@ export default function AddBar() {
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [geocodeCache, setGeocodeCache] = useState({});
+  const [lastSubmittedLocation, setLastSubmittedLocation] = useState(null);
+  const geocodeTimeout = useRef(null);
   const router = useRouter();
   const { user } = useAuth();
   const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
@@ -23,34 +27,76 @@ export default function AddBar() {
     reader.readAsDataURL(file);
   };
 
+  // Helper to geocode address with Google Maps API before submission
+  async function geocodeAddress(address) {
+    // Use cache to prevent duplicate API calls
+    if (geocodeCache[address]) {
+      return geocodeCache[address];
+    }
+    const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
+    if (!apiKey) return null;
+    const url = `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(address)}&key=${apiKey}`;
+    try {
+      const res = await fetch(url);
+      const data = await res.json();
+      if (data.status === 'OK' && data.results[0]) {
+        const { lat, lng } = data.results[0].geometry.location;
+        // Log and validate
+        if (typeof lat === 'number' && typeof lng === 'number' && !isNaN(lat) && !isNaN(lng)) {
+          const coords = [lng, lat];
+          setGeocodeCache(prev => ({ ...prev, [address]: coords }));
+          console.log('Geocoded coords:', coords);
+          return coords;
+        } else {
+          console.error('Invalid geocode response:', data.results[0].geometry.location);
+        }
+      } else {
+        console.error('Geocoding failed, status:', data.status, data.error_message);
+      }
+    } catch (e) {
+      console.error('Geocoding failed:', e.message);
+    }
+    return null;
+  }
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     setMessage('');
     setError('');
     setIsSubmitting(true);
-    
+    if (isSubmitting) return; // Prevent double submits
+    setLastSubmittedLocation(location);
     try {
-      console.log('Sending with token:', token);
-      const res = await fetch('https://barscout-api.ctfguide.com/api/bars', {
+      let coords = null;
+      if (location) {
+        coords = await geocodeAddress(location);
+        if (!coords || coords.length !== 2 || coords.some(n => typeof n !== 'number' || isNaN(n))) {
+          setError('Could not determine coordinates for this address. Please check the address and try again.');
+          setIsSubmitting(false);
+          return;
+        }
+      }
+      console.log('Sending with token:', token, 'coords:', coords);
+      const res = await fetch(process.env.NEXT_PUBLIC_API + "/api/bars", {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${token}`
         },
-        body: JSON.stringify({ name, location, image })
+        body: JSON.stringify({ name, location, image, coordinates: coords })
       });
-      
+
       const data = await res.json().catch(() => ({}));
-      
+
       if (!res.ok) {
         throw new Error(data.error || `Failed to add bar: ${res.status} ${res.statusText}`);
       }
-      
+
       setMessage('Bar added successfully!');
       setName('');
       setLocation('');
       setImage('');
-      
+
       // Redirect to the bars page after a short delay
       setTimeout(() => {
         router.push('/bars');
@@ -98,14 +144,21 @@ export default function AddBar() {
           
           <div>
             <label className="block text-sm font-medium text-gray-400 mb-1">Location</label>
-            <input 
-              type="text" 
-              placeholder="Enter location" 
-              value={location} 
-              onChange={e => setLocation(e.target.value)} 
-              required 
-              className="input" 
-              disabled={isSubmitting}
+            <PlacesAutocomplete
+              value={location}
+              onChange={setLocation}
+              onPlaceSelected={place => {
+                // If place has geometry, update geocodeCache immediately
+                if (place.geometry && place.geometry.location) {
+                  const lat = place.geometry.location.lat();
+                  const lng = place.geometry.location.lng();
+                  if (typeof lat === 'number' && typeof lng === 'number' && !isNaN(lat) && !isNaN(lng)) {
+                    const coords = [lng, lat];
+                    setGeocodeCache(prev => ({ ...prev, [place.formatted_address || place.name || location]: coords }));
+                  }
+                }
+              }}
+              placeholder="Enter address or bar name"
             />
           </div>
           

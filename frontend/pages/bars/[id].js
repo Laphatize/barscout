@@ -1,7 +1,9 @@
 import { useRouter } from 'next/router';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import Layout from '../../components/Layout';
 import { MapPinIcon, QueueListIcon, StarIcon, CurrencyDollarIcon, UsersIcon, ChevronDownIcon, ShareIcon, HeartIcon, PlusIcon, MinusIcon } from '@heroicons/react/24/solid';
+import { useLocation } from '../../context/LocationContext';
+import io from 'socket.io-client';
 
 const TRAFFIC_LEVELS = ['Empty', 'Moderate', 'Busy', 'Packed'];
 const TRAFFIC_COLORS = {
@@ -11,11 +13,47 @@ const TRAFFIC_COLORS = {
   'Packed': 'bg-red-500'
 };
 
+// Helper to geocode an address using Google Maps Geocoding API
+async function geocodeAddress(address) {
+  const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
+  if (!apiKey) return null;
+  const url = `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(address)}&key=${apiKey}`;
+  try {
+    const res = await fetch(url);
+    const data = await res.json();
+    if (data.status === 'OK' && data.results[0]) {
+      return {
+        lat: data.results[0].geometry.location.lat,
+        lng: data.results[0].geometry.location.lng
+      };
+    }
+  } catch (e) { /* ignore */ }
+  return null;
+}
+
+// --- Helper: Haversine formula ---
+function calculateDistance(lat1, lon1, lat2, lon2) {
+  const R = 6371e3; // meters
+  const φ1 = lat1 * Math.PI / 180;
+  const φ2 = lat2 * Math.PI / 180;
+  const Δφ = (lat2 - lat1) * Math.PI / 180;
+  const Δλ = (lon2 - lon1) * Math.PI / 180;
+  const a = Math.sin(Δφ/2) * Math.sin(Δφ/2) +
+    Math.cos(φ1) * Math.cos(φ2) *
+    Math.sin(Δλ/2) * Math.sin(Δλ/2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+  return R * c;
+}
+
 export default function BarDetail() {
   const router = useRouter();
   const { id } = router.query;
   const [bar, setBar] = useState(null);
   const [queueStatus, setQueueStatus] = useState(null);
+  const [userLocation, setUserLocation] = useState(null);
+  const [isHere, setIsHere] = useState(false);
+  const [socket, setSocket] = useState(null);
+  const [userId, setUserId] = useState(null);
   const [loading, setLoading] = useState(true);
   const [rating, setRating] = useState(0);
   const [coverFee, setCoverFee] = useState(20); // Default to $20
@@ -24,16 +62,38 @@ export default function BarDetail() {
   const [showMap, setShowMap] = useState(false);
   const [isFavorite, setIsFavorite] = useState(false);
   const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
+  const { getBarPopularity, startTracking, stopTracking, isTracking, nearbyBar } = useLocation();
+  const watchIdRef = useRef(null);
+  const [liveCount, setLiveCount] = useState(0);
+
+  useEffect(() => {
+    setSocket(io(process.env.NEXT_PUBLIC_API));
+    // Get userId from localStorage or JWT
+    let storedUserId = localStorage.getItem('userId');
+    if (!storedUserId) {
+      const token = localStorage.getItem('token');
+      if (token) {
+        try {
+          const payload = JSON.parse(atob(token.split('.')[1]));
+          storedUserId = payload.id || payload.userId || payload.sub;
+        } catch {}
+      }
+    }
+    if (storedUserId) setUserId(storedUserId);
+  }, []);
 
   useEffect(() => {
     if (id) {
-      fetch(`https://barscout-api.ctfguide.com/api/bars/${id}`)
+      fetch(`${process.env.NEXT_PUBLIC_API}/api/bars/${id}`)
         .then(res => res.json())
-        .then(setBar)
+        .then(async data => {
+          const geo = await geocodeAddress(data.location);
+          setBar({ ...data, _geo: geo });
+        })
         .finally(() => setLoading(false));
 
       if (token) {
-        fetch(`https://barscout-api.ctfguide.com/api/queue/${id}`, {
+        fetch(`${process.env.NEXT_PUBLIC_API}/api/queue/${id}`, {
           headers: { 'Authorization': `Bearer ${token}` }
         })
           .then(res => setQueueStatus(res.ok))
@@ -42,8 +102,77 @@ export default function BarDetail() {
     }
   }, [id]);
 
+  // --- Real-time continuous location tracking ---
+  useEffect(() => {
+    if (bar && bar._geo && socket && userId) {
+      if (navigator.geolocation) {
+        // Clean up any previous watcher
+        if (watchIdRef.current !== null) {
+          navigator.geolocation.clearWatch(watchIdRef.current);
+        }
+        // Start watching the user's position
+        watchIdRef.current = navigator.geolocation.watchPosition(
+          (position) => {
+            const { latitude, longitude } = position.coords;
+            setUserLocation({ latitude, longitude });
+            const distance = calculateDistance(
+              latitude,
+              longitude,
+              bar._geo.lat,
+              bar._geo.lng
+            );
+            const here = distance < 100; // 100 meters threshold
+            setIsHere(here);
+            if (here) {
+              socket.emit('updateLocation', {
+                userId,
+                location: { latitude, longitude },
+                barId: bar._id
+              });
+            } else {
+              // Optionally emit a leave event if you want
+              socket.emit('leaveLocation', {
+                userId,
+                barId: bar._id
+              });
+            }
+          },
+          () => setUserLocation(null),
+          { enableHighAccuracy: true, maximumAge: 10000, timeout: 20000 }
+        );
+        // Cleanup on unmount
+        return () => {
+          if (watchIdRef.current !== null) {
+            navigator.geolocation.clearWatch(watchIdRef.current);
+            watchIdRef.current = null;
+          }
+        };
+      }
+    }
+  }, [bar, socket, userId]);
+
+  // --- Listen for live popularity updates ---
+  useEffect(() => {
+    if (!socket || !bar) return;
+    const handler = (popularity) => {
+      if (popularity && popularity[bar._id]) {
+        setLiveCount(popularity[bar._id].count);
+      }
+    };
+    socket.on('popularityUpdate', handler);
+    // Request initial count (optional: you could emit a request here)
+    return () => socket.off('popularityUpdate', handler);
+  }, [socket, bar]);
+
+  useEffect(() => {
+    if (id && socket) {
+      // Optionally request the current popularity count on mount
+      socket.emit('requestPopularity', { barId: id });
+    }
+  }, [id, socket]);
+
   const handleJoin = async () => {
-    await fetch(`https://barscout-api.ctfguide.com/api/queue/${id}`, {
+    await fetch(`${process.env.NEXT_PUBLIC_API}/api/queue/${id}`, {
       method: 'POST',
       headers: { 'Authorization': `Bearer ${token}` }
     });
@@ -51,16 +180,16 @@ export default function BarDetail() {
   };
 
   const handleLeave = async () => {
-    await fetch(`https://barscout-api.ctfguide.com/api/queue/${id}`, {
+    await fetch(`${process.env.NEXT_PUBLIC_API}/api/queue/${id}`, {
       method: 'DELETE',
       headers: { 'Authorization': `Bearer ${token}` }
     });
     setQueueStatus(false);
   };
-
+  
   const submitRating = async () => {
     setSubmitting(true);
-    await fetch(`https://barscout-api.ctfguide.com/api/bars/${id}/rate`, {
+    await fetch(`${process.env.NEXT_PUBLIC_API}/api/bars/${id}/rate`, {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${token}`,
@@ -69,14 +198,14 @@ export default function BarDetail() {
       body: JSON.stringify({ value: rating })
     });
     // Refresh bar info
-    const barRes = await fetch(`https://barscout-api.ctfguide.com/api/bars/${id}`);
+    const barRes = await fetch(`${process.env.NEXT_PUBLIC_API}/api/bars/${id}`);
     setBar(await barRes.json());
     setSubmitting(false);
   };
 
   const submitCover = async () => {
     setSubmitting(true);
-    await fetch(`https://barscout-api.ctfguide.com/api/bars/${id}/cover`, {
+    await fetch(`${process.env.NEXT_PUBLIC_API}/api/bars/${id}/cover`, {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${token}`,
@@ -84,14 +213,14 @@ export default function BarDetail() {
       },
       body: JSON.stringify({ amount: Number(coverFee) })
     });
-    const barRes = await fetch(`https://barscout-api.ctfguide.com/api/bars/${id}`);
+    const barRes = await fetch(`${process.env.NEXT_PUBLIC_API}/api/bars/${id}`);
     setBar(await barRes.json());
     setSubmitting(false);
   };
 
   const submitTraffic = async () => {
     setSubmitting(true);
-    await fetch(`https://barscout-api.ctfguide.com/api/bars/${id}/traffic`, {
+    await fetch(`${process.env.NEXT_PUBLIC_API}/api/bars/${id}/traffic`, {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${token}`,
@@ -99,7 +228,7 @@ export default function BarDetail() {
       },
       body: JSON.stringify({ level: traffic })
     });
-    const barRes = await fetch(`https://barscout-api.ctfguide.com/api/bars/${id}`);
+    const barRes = await fetch(`${process.env.NEXT_PUBLIC_API}/api/bars/${id}`);
     setBar(await barRes.json());
     setSubmitting(false);
     setTraffic('');
@@ -242,25 +371,37 @@ export default function BarDetail() {
                       <span className="text-white font-medium">{latestTraffic}</span>
                     </div>
                   )}
+                  
+                  {/* Live user count */}
+                  <div className="flex items-center text-gray-200 bg-blue-500/20 px-3 py-1 rounded-full">
+                    <UsersIcon className="h-4 w-4 mr-1 text-blue-400" />
+                    <span className="font-medium">Live: {liveCount} {liveCount === 1 ? 'person' : 'people'}</span>
+                    {isHere && (
+                      <span className="ml-2 text-xs bg-blue-600 text-white px-2 py-0.5 rounded-full">You're here!</span>
+                    )}
+                  </div>
                 </div>
               </div>
               
               {/* Queue status and button */}
               {token && queueStatus !== null && (
                 <div className="mt-4 sm:mt-0">
-                  <div className="flex items-center mb-2 justify-end">
-                    <QueueListIcon className="h-5 w-5 text-blue-400 mr-2" />
+                  <div className="flex items-center text-gray-200 bg-orange-500/20 px-3 py-1 rounded-full">
+                    <QueueListIcon className="h-4 w-4 mr-1 text-orange-400" />
                     <span className="text-white font-medium">Queue: {bar.queueCount}</span>
+                    <span className="ml-2">
+                      {queueStatus ? (
+                        <button onClick={handleLeave} className="py-1 px-3 rounded-lg font-bold text-white transition-all duration-300 transform hover:scale-105 shadow-lg shadow-blue-900/30 text-xs">
+                          Leave Queue?
+                        </button>
+                      ) : (
+                        <button onClick={handleJoin} className="py-1 px-3 rounded-lg font-bold text-white   transition-all duration-300 transform hover:scale-105 shadow-lg shadow-blue-900/30 text-xs">
+                          Join Queue?
+                        </button>
+                      )}
+                    </span>
                   </div>
-                  {queueStatus ? (
-                    <button onClick={handleLeave} className="btn-secondary w-full sm:w-auto">
-                      Leave Queue
-                    </button>
-                  ) : (
-                    <button onClick={handleJoin} className="btn-primary w-full sm:w-auto">
-                      Join Queue
-                    </button>
-                  )}
+                
                 </div>
               )}
             </div>
@@ -270,6 +411,30 @@ export default function BarDetail() {
       
       {/* Main Content */}
       <div className="max-w-4xl mx-auto">
+        {/* Bar Location & Coordinates Section */}
+        <div className="mb-6 hidden">
+          <h2 className="text-xl font-bold text-white mb-2">Bar Location</h2>
+          <div className="bg-gray-800/80 rounded-xl p-4 text-white">
+            <div><span className="font-semibold">Address:</span> {bar.location}</div>
+            <div><span className="font-semibold">Coordinates:</span> {bar._geo ? `Lat: ${bar._geo.lat.toFixed(6)}, Lng: ${bar._geo.lng.toFixed(6)}` : 'N/A'}</div>
+            {bar._geo && (
+              <a
+                href={`https://www.google.com/maps?q=${bar._geo.lat},${bar._geo.lng}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-blue-400 underline ml-2"
+              >
+                View on Google Maps
+              </a>
+            )}
+            {/* Show "You're here!" if user is at the bar */}
+            {isHere && (
+              <div className="mt-4 text-green-400 font-bold text-lg">You're here!</div>
+            )}
+            <div className="mt-2 text-blue-300">Live: {liveCount} {liveCount === 1 ? 'person' : 'people'} here</div>
+          </div>
+        </div>
+        
         {/* Map Section with Toggle */}
         <div className="mb-8 overflow-hidden rounded-xl border border-gray-800 bg-gray-900/50">
           <button 
@@ -298,7 +463,7 @@ export default function BarDetail() {
           <div className="space-y-6 mb-8">
             <h2 className="text-2xl font-bold text-white mb-4">Share Your Experience</h2>
             
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 gap-4">
               {/* Rating Card */}
               <div className="card-body bg-gradient-to-br from-gray-800/80 to-gray-900/80 rounded-xl p-5 backdrop-blur-sm">
                 <h3 className="text-lg font-medium mb-4 text-center">Rate this bar</h3>
