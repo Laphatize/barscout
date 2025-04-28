@@ -100,12 +100,10 @@ export default function Home() {
         <link rel="icon" href="/favicon.ico" />
       </Head>
       
-      {/* Full-screen background with overlay - using fixed positioning */}
-      <div className="fixed top-0 left-0 w-full h-full -z-10">
-      </div>
+
       
       <motion.div 
-        className="w-full bg-gray-900/70 backdrop-blur-md text-white rounded-2xl shadow-xl mt-16 mx-auto flex flex-col items-center justify-center min-h-[60vh] border border-gray-800/50 overflow-hidden"
+        className="w-full bg-gray-900/70 backdrop-blur-md text-white rounded-2xl shadow-xl  mx-auto flex flex-col items-center justify-center min-h-[60vh] border border-gray-800/50 overflow-hidden"
         initial="hidden"
         animate="visible"
         variants={containerVariants}
@@ -137,7 +135,7 @@ export default function Home() {
         ></motion.div>
         
         <motion.div 
-          className="relative w-16 h-16 mb-6 bg-gradient-to-br from-blue-500 to-blue-700 rounded-xl flex items-center justify-center shadow-lg shadow-blue-500/20 transform"
+          className="mt-10 relative w-16 h-16 mb-6 bg-gradient-to-br from-blue-500 to-blue-700 rounded-xl flex items-center justify-center shadow-lg shadow-blue-500/20 transform"
           variants={logoVariants}
           whileHover="hover"
           
@@ -163,7 +161,7 @@ export default function Home() {
         
         {!isLoggedIn ? (
           <motion.div 
-            className="flex flex-col gap-4 w-full max-w-xs"
+            className="flex flex-col gap-4 w-full max-w-xs px-4"
             variants={itemVariants}
           >
             <motion.div
@@ -188,7 +186,7 @@ export default function Home() {
           </motion.div>
         ) : (
           <motion.div 
-            className="flex flex-col gap-4 w-full max-w-xs"
+            className="flex flex-col gap-4 w-full max-w-xs px-4"
             variants={itemVariants}
           >
             <motion.div
@@ -214,7 +212,7 @@ export default function Home() {
         )}
         
         <motion.div 
-          className="mt-10 text-sm text-gray-400 text-center"
+          className="mt-10 mb-10 text-sm text-gray-400 text-center"
           variants={itemVariants}
         >
           BarScout &copy; {new Date().getFullYear()} &mdash; Made for the nightlife.
