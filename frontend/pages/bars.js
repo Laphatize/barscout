@@ -56,7 +56,7 @@ export default function Bars() {
 
   // Fetch bars
   useEffect(() => {
-    fetch('http://localhost:5001/api/bars')
+    fetch('https://api-barscout.ctfguide.com/api/bars')
       .then(res => res.json())
       .then(setBars)
       .finally(() => setLoading(false));

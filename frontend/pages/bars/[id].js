@@ -27,13 +27,13 @@ export default function BarDetail() {
 
   useEffect(() => {
     if (id) {
-      fetch(`http://localhost:5001/api/bars/${id}`)
+      fetch(`https://api-barscout.ctfguide.com/api/bars/${id}`)
         .then(res => res.json())
         .then(setBar)
         .finally(() => setLoading(false));
 
       if (token) {
-        fetch(`http://localhost:5001/api/queue/${id}`, {
+        fetch(`https://api-barscout.ctfguide.com/api/queue/${id}`, {
           headers: { 'Authorization': `Bearer ${token}` }
         })
           .then(res => setQueueStatus(res.ok))
@@ -43,7 +43,7 @@ export default function BarDetail() {
   }, [id]);
 
   const handleJoin = async () => {
-    await fetch(`http://localhost:5001/api/queue/${id}`, {
+    await fetch(`https://api-barscout.ctfguide.com/api/queue/${id}`, {
       method: 'POST',
       headers: { 'Authorization': `Bearer ${token}` }
     });
@@ -51,7 +51,7 @@ export default function BarDetail() {
   };
 
   const handleLeave = async () => {
-    await fetch(`http://localhost:5001/api/queue/${id}`, {
+    await fetch(`https://api-barscout.ctfguide.com/api/queue/${id}`, {
       method: 'DELETE',
       headers: { 'Authorization': `Bearer ${token}` }
     });
@@ -60,7 +60,7 @@ export default function BarDetail() {
 
   const submitRating = async () => {
     setSubmitting(true);
-    await fetch(`http://localhost:5001/api/bars/${id}/rate`, {
+    await fetch(`https://api-barscout.ctfguide.com/api/bars/${id}/rate`, {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${token}`,
@@ -69,14 +69,14 @@ export default function BarDetail() {
       body: JSON.stringify({ value: rating })
     });
     // Refresh bar info
-    const barRes = await fetch(`http://localhost:5001/api/bars/${id}`);
+    const barRes = await fetch(`https://api-barscout.ctfguide.com/api/bars/${id}`);
     setBar(await barRes.json());
     setSubmitting(false);
   };
 
   const submitCover = async () => {
     setSubmitting(true);
-    await fetch(`http://localhost:5001/api/bars/${id}/cover`, {
+    await fetch(`https://api-barscout.ctfguide.com/api/bars/${id}/cover`, {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${token}`,
@@ -84,14 +84,14 @@ export default function BarDetail() {
       },
       body: JSON.stringify({ amount: Number(coverFee) })
     });
-    const barRes = await fetch(`http://localhost:5001/api/bars/${id}`);
+    const barRes = await fetch(`https://api-barscout.ctfguide.com/api/bars/${id}`);
     setBar(await barRes.json());
     setSubmitting(false);
   };
 
   const submitTraffic = async () => {
     setSubmitting(true);
-    await fetch(`http://localhost:5001/api/bars/${id}/traffic`, {
+    await fetch(`https://api-barscout.ctfguide.com/api/bars/${id}/traffic`, {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${token}`,
@@ -99,7 +99,7 @@ export default function BarDetail() {
       },
       body: JSON.stringify({ level: traffic })
     });
-    const barRes = await fetch(`http://localhost:5001/api/bars/${id}`);
+    const barRes = await fetch(`https://api-barscout.ctfguide.com/api/bars/${id}`);
     setBar(await barRes.json());
     setSubmitting(false);
     setTraffic('');

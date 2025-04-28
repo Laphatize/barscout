@@ -31,7 +31,7 @@ export default function AddBar() {
     
     try {
       console.log('Sending with token:', token);
-      const res = await fetch('http://localhost:5001/api/bars', {
+      const res = await fetch('https://api-barscout.ctfguide.com/api/bars', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
